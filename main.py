@@ -16,7 +16,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-BENTO4_BIN_DIR = "/usr/local/bin"  # Ensure this matches the installation path
+BENTO4_BIN_DIR = "/usr/local/bin"  # Path to Bento4 binaries
 os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR
 
 async def download_file(url, dest, message):
@@ -38,7 +38,7 @@ async def download_file(url, dest, message):
     return dest
 
 def decrypt_mp4(input_file, output_file, key):
-    command = ["mp4decrypt", "--key", f"1:{key}", input_file, output_file]
+    command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", f"1:{key}", input_file, output_file]
     try:
         result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return result.stdout.decode(), None
