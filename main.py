@@ -3,6 +3,7 @@ import subprocess
 import aiohttp
 import aiofiles
 from pyrogram import Client, filters
+from pyrogram.errors import FloodWait
 from dotenv import load_dotenv
 import asyncio
 import time
@@ -16,7 +17,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-BENTO4_BIN_DIR = "/usr/local/bin"  # Path to Bento4 binaries
+BENTO4_BIN_DIR = "/root/bin"  # Path to Bento4 binaries
 os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR
 
 async def download_file(url, dest, message):
@@ -33,7 +34,10 @@ async def download_file(url, dest, message):
                         current_time = time.time()
                         if total_size and current_time - last_update_time >= 10:
                             progress = (downloaded_size / total_size) * 100
-                            await message.edit_text(f"Downloading... {progress:.2f}%")
+                            try:
+                                await message.edit_text(f"Downloading... {progress:.2f}%")
+                            except FloodWait as e:
+                                await asyncio.sleep(e.value)
                             last_update_time = current_time
     return dest
 
@@ -91,8 +95,13 @@ async def download_and_decrypt_video(client, message):
         await status_message.edit_text(f"Decryption failed: {stderr}")
     else:
         await status_message.edit_text("Decryption successful! Uploading the file...")
-        await client.send_document(chat_id=message.chat.id, document=output_file)
-        await status_message.edit_text("File uploaded successfully!")
+        try:
+            await client.send_document(chat_id=message.chat.id, document=output_file)
+            await status_message.edit_text("File uploaded successfully!")
+        except FloodWait as e:
+            await asyncio.sleep(e.seconds)
+            await client.send_document(chat_id=message.chat.id, document=output_file)
+            await status_message.edit_text("File uploaded successfully!")
 
 if __name__ == "__main__":
     app.run()
