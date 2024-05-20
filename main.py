@@ -45,25 +45,27 @@ async def download_file(url, dest, message):
                             start_time = current_time
     return dest
 
-def decrypt_mp4(input_file, output_file, key, status_message):
+async def decrypt_mp4(input_file, output_file, key, status_message):
     command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", f"1:{key}", input_file, output_file]
     start_time = time.time()
-    try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        while process.poll() is None:
-            elapsed_time = time.time() - start_time
-            try:
-                status_message.edit_text(f"Decrypting... {elapsed_time:.2f} seconds elapsed")
-            except FloodWait as e:
-                time.sleep(e.value)
-            time.sleep(5)
-        stdout, stderr = process.communicate()
-        if process.returncode == 0:
-            return stdout.decode(), None
-        else:
-            return None, stderr.decode()
-    except subprocess.CalledProcessError as e:
-        return None, e.stderr.decode()
+    process = await asyncio.create_subprocess_exec(*command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    while True:
+        elapsed_time = time.time() - start_time
+        try:
+            await status_message.edit_text(f"Decrypting... {elapsed_time:.2f} seconds elapsed")
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+        except Exception as e:
+            if "MESSAGE_NOT_MODIFIED" not in str(e):
+                raise
+        await asyncio.sleep(5)
+        if process.returncode is not None:
+            break
+    stdout, stderr = await process.communicate()
+    if process.returncode == 0:
+        return stdout.decode(), None
+    else:
+        return None, stderr.decode()
 
 @app.on_message(filters.command("start"))
 def start_command(client, message):
@@ -106,7 +108,7 @@ async def download_and_decrypt_video(client, message):
 
     # Decrypt the file
     await status_message.edit_text("Decrypting the file...")
-    stdout, stderr = decrypt_mp4(input_file, output_file, key, status_message)
+    stdout, stderr = await decrypt_mp4(input_file, output_file, key, status_message)
     if stderr:
         await status_message.edit_text(f"Decryption failed: {stderr}")
     else:
