@@ -7,8 +7,10 @@ from pyrogram.errors import FloodWait
 from dotenv import load_dotenv
 import asyncio
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from flask import Flask
+import xml.etree.ElementTree as ET
+import re
 
 # Load environment variables
 load_dotenv()
@@ -21,9 +23,10 @@ PORT = int(os.getenv("PORT", 5000))  # Default to port 5000 if PORT is not set
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 server = Flask(__name__)
 
-# Bento4 bin directory path in the root directory
+# Bento4 and FFmpeg bin directory path in the root directory
 BENTO4_BIN_DIR = os.path.abspath("./bin")
-os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR
+FFMPEG_BIN_DIR = os.path.abspath("./ffmpeg")
+os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR + os.pathsep + FFMPEG_BIN_DIR
 
 @server.route("/")
 def index():
@@ -54,24 +57,98 @@ async def download_file(url, dest, message):
                             start_time = current_time
     return dest
 
-async def decrypt_mp4(input_file, output_file, key, status_message):
-    command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", f"1:{key}", input_file, output_file]
-    start_time = time.time()
+async def download_mpd(url, dest_folder, status_message, video_id=None):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            mpd_content = await response.text()
+    
+    # Parse MPD file
+    root = ET.fromstring(mpd_content)
+    namespace = {'mpd': 'urn:mpeg:dash:schema:mpd:2011'}
+    base_url = urljoin(url, root.find('mpd:BaseURL', namespace).text if root.find('mpd:BaseURL', namespace) else '')
+    
+    segment_urls = {}
+    for adaptation_set in root.findall('mpd:Period/mpd:AdaptationSet', namespace):
+        for representation in adaptation_set.findall('mpd:Representation', namespace):
+            mime_type = adaptation_set.get('mimeType')
+            representation_id = representation.get('id')
+            bandwidth = int(representation.get('bandwidth', 0))
+            if representation_id not in segment_urls:
+                segment_urls[representation_id] = {'mime_type': mime_type, 'bandwidth': bandwidth, 'segments': []}
+            
+            segment_template = representation.find('mpd:SegmentTemplate', namespace)
+            if segment_template is not None:
+                initialization = segment_template.get('initialization')
+                media = segment_template.get('media')
+                timescale = int(segment_template.get('timescale', 1))
+                duration = int(segment_template.get('duration', 1))
+                
+                # Add initialization segment
+                init_url = urljoin(base_url, initialization)
+                segment_urls[representation_id]['segments'].append(init_url)
+                
+                # Add media segments
+                for i in range(0, timescale, duration):
+                    media_url = urljoin(base_url, media.replace('$Number$', str(i)))
+                    segment_urls[representation_id]['segments'].append(media_url)
+
+    # Select the best video quality or specified quality
+    selected_rep_id = None
+    if video_id:
+        for rep_id in segment_urls.keys():
+            if rep_id == video_id:
+                selected_rep_id = rep_id
+                break
+        if not selected_rep_id:
+            await status_message.edit_text("Specified video ID not found.")
+            return None, None
+    else:
+        selected_rep_id = max(segment_urls.keys(), key=lambda rep_id: segment_urls[rep_id]['bandwidth'])
+
+    # Download selected segments
+    segment_files = []
+    for i, segment_url in enumerate(segment_urls[selected_rep_id]['segments']):
+        segment_file = os.path.join(dest_folder, f"segment_{i}.m4s")
+        segment_files.append(segment_file)
+        await download_file(segment_url, segment_file, status_message)
+    
+    return segment_files, selected_rep_id
+
+async def decrypt_segments(input_files, keys, output_prefix, status_message):
+    decrypted_files = []
+    for i, input_file in enumerate(input_files):
+        key = keys[i % len(keys)]
+        output_file = f"{output_prefix}_decrypted_{i}.m4s"
+        command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", key, input_file, output_file]
+        process = await asyncio.create_subprocess_exec(*command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        if process.returncode == 0:
+            decrypted_files.append(output_file)
+        else:
+            return None, stderr.decode()
+    return decrypted_files, None
+
+async def combine_audio_video(audio_files, video_files, output_file, status_message):
+    # Create input file lists for FFmpeg
+    with open("audio_list.txt", "w") as audio_list:
+        for audio_file in audio_files:
+            audio_list.write(f"file '{audio_file}'\n")
+
+    with open("video_list.txt", "w") as video_list:
+        for video_file in video_files:
+            video_list.write(f"file '{video_file}'\n")
+
+    # Combine audio and video using FFmpeg
+    command = [
+        os.path.join(FFMPEG_BIN_DIR, "ffmpeg"),
+        "-f", "concat", "-safe", "0", "-i", "video_list.txt",
+        "-f", "concat", "-safe", "0", "-i", "audio_list.txt",
+        "-c", "copy", output_file
+    ]
     process = await asyncio.create_subprocess_exec(*command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    while process.returncode is None:
-        elapsed_time = time.time() - start_time
-        try:
-            await status_message.edit_text(f"Decrypting... {elapsed_time:.2f} seconds elapsed")
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-        except Exception as e:
-            if "MESSAGE_NOT_MODIFIED" not in str(e):
-                raise
-        await asyncio.sleep(5)
-        await process.wait()
     stdout, stderr = await process.communicate()
     if process.returncode == 0:
-        return stdout.decode(), None
+        return output_file, None
     else:
         return None, stderr.decode()
 
@@ -85,65 +162,44 @@ def help_command(client, message):
         "Here are the available commands:\n"
         "/start - Welcome message\n"
         "/help - Show this help message\n"
-        "/download [URL] [KEY] - Download and decrypt a video using the provided URL and key\n"
+        "/download [URL] --key [KEY1:KEY2] --key [KEY3:KEY4] ... -M format=[FORMAT] -sv id=[VIDEO_ID] -sa best --save-name [NAME]\n"
         "\nExample usage:\n"
-        "/download http://example.com/video.mp4 your_decryption_key"
+        "/download https://example.com/stream.mpd --key key1:key2 --key key3:key4 -M format=mp4 -sv id='2' -sa best --save-name 'My Video'"
     )
     message.reply_text(help_text)
 
 @app.on_message(filters.command("download"))
 async def download_and_decrypt_video(client, message):
-    args = message.text.split(" ")
-    if len(args) < 3:
-        await message.reply_text("Usage: /download [URL] [KEY]")
+    command_text = message.text
+
+    # Extract URL
+    url_match = re.search(r"(https?://[^\s]+)", command_text)
+    if not url_match:
+        await message.reply_text("Invalid URL format.")
+        return
+    url = url_match.group(0)
+
+    # Extract keys
+    keys = re.findall(r"--key ([a-f0-9]{32}:[a-f0-9]{32})", command_text)
+    if not keys:
+        await message.reply_text("No valid keys provided.")
         return
 
-    url = args[1]
-    key = args[2]
+    # Extract save name
+    save_name_match = re.search(r"--save-name '([^']+)'", command_text)
+    save_name = save_name_match.group(1) if save_name_match else "decrypted_video"
 
-    # Extract the file name from the URL
-    parsed_url = urlparse(url)
-    input_file = os.path.basename(parsed_url.path)
-    output_file = "decrypted.mp4"
+    # Extract format (currently unused, can be extended)
+    format_match = re.search(r"-M format=([a-z0-9]+)", command_text)
+    format = format_match.group(1) if format_match else "mp4"
+
+    # Extract video ID for specific quality selection
+    video_id_match = re.search(r"-sv id='([^']+)'", command_text)
+    video_id = video_id_match.group(1) if video_id_match else None
+
+    dest_folder = os.path.join(os.getcwd(), "segments")
+    if not os.path.exists(dest_folder):
+        os.makedirs(dest_folder)
 
     # Inform the user about the start of the download
-    status_message = await message.reply_text("Starting download...")
-
-    # Download the file
-    try:
-        await download_file(url, input_file, status_message)
-        await status_message.edit_text("Download completed.")
-    except Exception as e:
-        await status_message.edit_text(f"Failed to download the file: {e}")
-        return
-
-    # Decrypt the file
-    await status_message.edit_text("Decrypting the file...")
-    stdout, stderr = await decrypt_mp4(input_file, output_file, key, status_message)
-    if stderr:
-        await status_message.edit_text(f"Decryption failed: {stderr}")
-    else:
-        await status_message.edit_text("Decryption successful! Uploading the file...")
-        try:
-            start_time = time.time()
-            await client.send_video(chat_id=message.chat.id, video=output_file)
-            elapsed_time = time.time() - start_time
-            speed = os.path.getsize(output_file) / elapsed_time / 1024
-            await status_message.edit_text(f"File uploaded successfully at {speed:.2f} KB/s!")
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-            await client.send_video(chat_id=message.chat.id, video=output_file)
-            await status_message.edit_text("File uploaded successfully!")
-
-if __name__ == "__main__":
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    from hypercorn.asyncio import serve
-    from hypercorn.config import Config
-
-    config = Config()
-    config.bind = [f"0.0.0.0:{PORT}"]
-
-    loop = asyncio.get_event_loop()
-    loop.create_task(serve(server, config))
-    app.run()
+   
