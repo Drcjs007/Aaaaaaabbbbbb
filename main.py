@@ -202,4 +202,8 @@ async def download_and_decrypt_video(client, message):
     video_id = video_id_match.group(1) if video_id_match else None
 
     dest_folder = os.path.join(os.getcwd(), "segments")
-    if not os.path.exists(dest_folder
+    if not os.path.exists(dest_folder):
+        os.makedirs(dest_folder)
+
+    # Inform the user about the start of the download
+    await message.reply_text("
