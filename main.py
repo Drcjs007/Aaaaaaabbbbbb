@@ -122,9 +122,14 @@ async def download_and_decrypt_video(client, message):
                 f"File uploaded successfully at {speed:.2f} KB/s!"
             )
         except FloodWait as e:
-            await asyncio.sleep(e.seconds)
+            await asyncio.sleep(e.value)
             await client.send_document(chat_id=message.chat.id, document=output_file)
             await status_message.edit_text("File uploaded successfully!")
 
 if __name__ == "__main__":
-    app.run()
+    try:
+        app.run()
+    except FloodWait as e:
+        print(f"FloodWait: Waiting for {e.value} seconds before retrying...")
+        asyncio.sleep(e.value)
+        app.run()
