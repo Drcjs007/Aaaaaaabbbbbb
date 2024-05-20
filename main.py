@@ -206,4 +206,10 @@ async def download_and_decrypt_video(client, message):
         os.makedirs(dest_folder)
 
     # Inform the user about the start of the download
-    await message.reply_text("
+    await message.reply_text("Starting download...")
+
+    # Proceed with the download and decryption process here
+
+if __name__ == "__main__":
+    app.run()
+    server.run(host="0.0.0.0", port=PORT)
