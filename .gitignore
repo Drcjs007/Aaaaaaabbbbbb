@@ -1,6 +1,0 @@
-# Python specific
-__pycache__/
-*.py[cod]
-
-# Environment Variables
-.env
