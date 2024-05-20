@@ -1,7 +1,7 @@
 import os
 import subprocess
 import time
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from dotenv import load_dotenv
 import logging
@@ -21,14 +21,11 @@ PORT = int(os.getenv("PORT", 8443))
 HEROKU_APP_NAME = os.getenv("HEROKU_APP_NAME")
 
 # Function to download and decrypt MPD links
-def download_and_decrypt(mpd_url, output_dir, file_name, keys):
+def download_and_decrypt(mpd_url, output_dir, file_name, keys, update, context):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Path to N_m3u8DL-RE executable
     nm3u8dl_re_path = './N_m3u8DL-RE_Beta_linux-arm64/N_m3u8DL-RE'
-
-    # Construct the download command with keys
     download_cmd = [
         nm3u8dl_re_path,
         mpd_url,
@@ -43,10 +40,29 @@ def download_and_decrypt(mpd_url, output_dir, file_name, keys):
 
     logger.info(f"Running download command: {' '.join(download_cmd)}")
 
-    # Execute the download command
-    process = subprocess.Popen(download_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(download_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-    return process
+    try:
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                logger.info(output.strip())
+                update.message.reply_text(output.strip())
+                time.sleep(5)
+    except Exception as e:
+        logger.error(f"Error during download: {e}")
+        update.message.reply_text(f"An error occurred during download: {e}")
+    
+    return_code = process.poll()
+    if return_code == 0:
+        return os.path.join(output_dir, file_name)
+    else:
+        stderr = process.stderr.read()
+        logger.error(f"Download failed: {stderr}")
+        update.message.reply_text(f"Download failed: {stderr}")
+        return None
 
 # Bot command handlers
 def start(update: Update, context: CallbackContext):
@@ -69,7 +85,6 @@ def help_command(update: Update, context: CallbackContext):
 def handle_message(update: Update, context: CallbackContext):
     logger.info(f"Received message: {update.message.text}")
     try:
-        # Parse the user input
         user_input = update.message.text.split()
         if len(user_input) != 6:
             update.message.reply_text("Please provide the MPD URL, file name, and four keys.")
@@ -86,20 +101,12 @@ def handle_message(update: Update, context: CallbackContext):
         output_dir = 'output_directory'
         update.message.reply_text("Starting download and decryption process...")
 
-        process = download_and_decrypt(mpd_url, output_dir, file_name, keys)
+        result_file = download_and_decrypt(mpd_url, output_dir, file_name, keys, update, context)
 
-        while process.poll() is None:
-            update.message.reply_text("Download in progress...")
-            time.sleep(5)
-
-        stdout, stderr = process.communicate()
-        if process.returncode == 0:
+        if result_file:
             update.message.reply_text("Download and decryption completed. Uploading the file...")
-            with open(os.path.join(output_dir, file_name), 'rb') as video:
+            with open(result_file, 'rb') as video:
                 update.message.reply_video(video)
-        else:
-            update.message.reply_text(f"An error occurred: {stderr.decode('utf-8')}")
-
     except Exception as e:
         logger.error(f"Error occurred: {e}")
         update.message.reply_text(f"An error occurred: {e}")
