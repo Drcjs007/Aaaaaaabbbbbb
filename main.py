@@ -17,7 +17,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-BENTO4_BIN_DIR = "/root/bin"  # Path to Bento4 binaries
+BENTO4_BIN_DIR = "/app/bin"  # Path to Bento4 binaries
 os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR
 
 async def download_file(url, dest, message):
