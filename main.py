@@ -1,7 +1,8 @@
 import os
 import subprocess
 import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -53,10 +54,10 @@ def download_and_decrypt(mpd_url, output_dir, key_file):
     return merged_output
 
 # Bot command handlers
-def start(update, context):
+def start(update: Update, context: CallbackContext):
     update.message.reply_text('Hello! Send me an MPD URL to download and decrypt.')
 
-def handle_message(update, context):
+def handle_message(update: Update, context: CallbackContext):
     mpd_url = update.message.text
     output_dir = 'output_directory'
     key_file = 'decryption_key'  # Provide the path to your key file
@@ -69,16 +70,12 @@ def handle_message(update, context):
 
 # Main function to set up the bot
 def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    application = Application.builder().token(TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    updater.start_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN)
-    updater.bot.setWebhook(f"https://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/{TOKEN}")
-
-    updater.idle()
+    application.run_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN, webhook_url=f"https://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/{TOKEN}")
 
 if __name__ == "__main__":
     main()
