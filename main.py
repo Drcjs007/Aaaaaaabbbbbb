@@ -7,6 +7,7 @@ from pyrogram.errors import FloodWait
 from dotenv import load_dotenv
 import asyncio
 import time
+from urllib.parse import urlparse
 from flask import Flask
 
 # Load environment variables
@@ -20,7 +21,8 @@ PORT = int(os.getenv("PORT", 5000))  # Default to port 5000 if PORT is not set
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 server = Flask(__name__)
 
-BENTO4_BIN_DIR = os.path.expanduser("~/Bento4-SDK-1-6-0-641.x86_64-unknown-linux/bin")
+# Bento4 bin directory path in the root directory
+BENTO4_BIN_DIR = os.path.abspath("./bin")
 os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR
 
 @server.route("/")
@@ -53,7 +55,7 @@ async def download_file(url, dest, message):
     return dest
 
 async def decrypt_mp4(input_file, output_file, key, status_message):
-    command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", key, input_file, output_file]
+    command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", f"1:{key}", input_file, output_file]
     start_time = time.time()
     process = await asyncio.create_subprocess_exec(*command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     while process.returncode is None:
@@ -98,7 +100,10 @@ async def download_and_decrypt_video(client, message):
 
     url = args[1]
     key = args[2]
-    input_file = "downloaded.mp4"
+
+    # Extract the file name from the URL
+    parsed_url = urlparse(url)
+    input_file = os.path.basename(parsed_url.path)
     output_file = "decrypted.mp4"
 
     # Inform the user about the start of the download
