@@ -56,6 +56,16 @@ def download_and_decrypt(mpd_url, output_dir, key_file):
 def start(update: Update, context: CallbackContext):
     update.message.reply_text('Hello! Send me an MPD URL to download and decrypt.')
 
+def help_command(update: Update, context: CallbackContext):
+    help_text = (
+        "Welcome to the MPD Downloader and Decrypter Bot!\n\n"
+        "Commands:\n"
+        "/start - Start the bot\n"
+        "/help - Show this help message\n\n"
+        "Send an MPD URL to download and decrypt the video."
+    )
+    update.message.reply_text(help_text)
+
 def handle_message(update: Update, context: CallbackContext):
     mpd_url = update.message.text
     output_dir = 'output_directory'
@@ -63,7 +73,9 @@ def handle_message(update: Update, context: CallbackContext):
 
     try:
         result_file = download_and_decrypt(mpd_url, output_dir, key_file)
-        update.message.reply_text(f"Download and decryption completed. File saved at {result_file}")
+        update.message.reply_text("Download and decryption completed. Uploading the file...")
+        with open(result_file, 'rb') as video:
+            update.message.reply_video(video)
     except Exception as e:
         update.message.reply_text(f"An error occurred: {e}")
 
@@ -72,6 +84,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     application.run_webhook(
