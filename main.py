@@ -7,6 +7,7 @@ from pyrogram.errors import FloodWait
 from dotenv import load_dotenv
 import asyncio
 import time
+from flask import Flask
 
 # Load environment variables
 load_dotenv()
@@ -14,11 +15,17 @@ load_dotenv()
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.getenv("PORT", 5000))  # Default to port 5000 if PORT is not set
 
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+server = Flask(__name__)
 
 BENTO4_BIN_DIR = "/app/bin"  # Path to Bento4 binaries
 os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR
+
+@server.route("/")
+def index():
+    return "Bot is running"
 
 async def download_file(url, dest, message):
     async with aiohttp.ClientSession() as session:
@@ -127,9 +134,14 @@ async def download_and_decrypt_video(client, message):
             await status_message.edit_text("File uploaded successfully!")
 
 if __name__ == "__main__":
-    try:
-        app.run()
-    except FloodWait as e:
-        print(f"FloodWait: Waiting for {e.value} seconds before retrying...")
-        asyncio.sleep(e.value)
-        app.run()
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    from hypercorn.asyncio import serve
+    from hypercorn.config import Config
+
+    config = Config()
+    config.bind = [f"0.0.0.0:{PORT}"]
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(serve(server, config))
+    app.run()
