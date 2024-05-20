@@ -1,14 +1,23 @@
 import os
 import subprocess
-from telegram import Update
+from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from dotenv import load_dotenv
+import logging
+
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 PORT = int(os.getenv("PORT", 8443))
+HEROKU_APP_NAME = os.getenv("HEROKU_APP_NAME")
 
 # Function to download and decrypt MPD links
 def download_and_decrypt(mpd_url, output_dir, keys):
@@ -31,6 +40,8 @@ def download_and_decrypt(mpd_url, output_dir, keys):
     for kid, key in keys.items():
         download_cmd.extend(['--key', f'{kid}:{key}'])
 
+    logger.info(f"Running download command: {' '.join(download_cmd)}")
+
     # Execute the download command
     subprocess.run(download_cmd, check=True)
 
@@ -39,9 +50,11 @@ def download_and_decrypt(mpd_url, output_dir, keys):
 
 # Bot command handlers
 def start(update: Update, context: CallbackContext):
+    logger.info("Received /start command")
     update.message.reply_text('Hello! Send me an MPD URL to download and decrypt with keys in the format: mpd_url, key1, key2, key3, key4')
 
 def help_command(update: Update, context: CallbackContext):
+    logger.info("Received /help command")
     help_text = (
         "Welcome to the MPD Downloader and Decrypter Bot!\n\n"
         "Commands:\n"
@@ -54,6 +67,7 @@ def help_command(update: Update, context: CallbackContext):
     update.message.reply_text(help_text)
 
 def handle_message(update: Update, context: CallbackContext):
+    logger.info(f"Received message: {update.message.text}")
     try:
         # Parse the user input
         user_input = update.message.text.split()
@@ -76,21 +90,24 @@ def handle_message(update: Update, context: CallbackContext):
         with open(result_file, 'rb') as video:
             update.message.reply_video(video)
     except Exception as e:
+        logger.error(f"Error occurred: {e}")
         update.message.reply_text(f"An error occurred: {e}")
 
 # Main function to set up the bot
 def main():
+    logger.info("Starting bot")
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    logger.info("Setting webhook")
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         url_path=TOKEN,
-        webhook_url=f"https://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/{TOKEN}"
+        webhook_url=f"https://{HEROKU_APP_NAME}.herokuapp.com/{TOKEN}"
     )
 
 if __name__ == "__main__":
