@@ -11,50 +11,35 @@ TOKEN = os.getenv("TOKEN")
 PORT = int(os.getenv("PORT", 8443))
 
 # Function to download and decrypt MPD links
-def download_and_decrypt(mpd_url, output_dir, key_file):
+def download_and_decrypt(mpd_url, output_dir, keys):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Path to N_m3u8DL-RE and mp4decrypt executables
+    # Path to N_m3u8DL-RE executable
     nm3u8dl_re_path = './N_m3u8DL-RE_Beta_linux-arm64/N_m3u8DL-RE'
-    mp4decrypt_path = './Bento4/Bento4-SDK-1-6-0-641.x86_64-unknown-linux/bin/mp4decrypt'
 
-    # Download segments using nm3u8dl
+    # Construct the download command with keys
     download_cmd = [
         nm3u8dl_re_path,
         mpd_url,
-        '--workDir', output_dir,
-        '--saveName', 'output'
+        '-M', 'format=mp4',
+        '-sv', "id='2'",
+        '-sa', 'best',
+        '--save-name', 'MENSTRUAL CYCLE-BASIC EXPLANATION'
     ]
+
+    for kid, key in keys.items():
+        download_cmd.extend(['--key', f'{kid}:{key}'])
+
+    # Execute the download command
     subprocess.run(download_cmd, check=True)
 
-    # Decrypt segments using mp4decrypt
-    encrypted_video = os.path.join(output_dir, 'output.mp4')
-    decrypted_video = os.path.join(output_dir, 'decrypted_output.mp4')
-    decrypt_cmd = [
-        mp4decrypt_path,
-        '--key', f'1:{key_file}',  # Replace '1' with the correct KID if needed
-        encrypted_video,
-        decrypted_video
-    ]
-    subprocess.run(decrypt_cmd, check=True)
-
-    # Merge audio and video using ffmpeg
-    merged_output = os.path.join(output_dir, 'merged_output.mp4')
-    merge_cmd = [
-        'ffmpeg',
-        '-i', decrypted_video,
-        '-i', os.path.join(output_dir, 'output_audio.mp4'),  # Adjust if audio is downloaded separately
-        '-c', 'copy',
-        merged_output
-    ]
-    subprocess.run(merge_cmd, check=True)
-
-    return merged_output
+    # Return the path to the downloaded file
+    return os.path.join(output_dir, 'MENSTRUAL CYCLE-BASIC EXPLANATION.mp4')
 
 # Bot command handlers
 def start(update: Update, context: CallbackContext):
-    update.message.reply_text('Hello! Send me an MPD URL to download and decrypt.')
+    update.message.reply_text('Hello! Send me an MPD URL to download and decrypt with keys in the format: mpd_url, key1, key2, key3, key4')
 
 def help_command(update: Update, context: CallbackContext):
     help_text = (
@@ -62,17 +47,31 @@ def help_command(update: Update, context: CallbackContext):
         "Commands:\n"
         "/start - Start the bot\n"
         "/help - Show this help message\n\n"
-        "Send an MPD URL to download and decrypt the video."
+        "Send an MPD URL followed by four keys to download and decrypt the video.\n"
+        "Example:\n"
+        "mpd_url key1 key2 key3 key4"
     )
     update.message.reply_text(help_text)
 
 def handle_message(update: Update, context: CallbackContext):
-    mpd_url = update.message.text
-    output_dir = 'output_directory'
-    key_file = 'decryption_key'  # Provide the path to your key file
-
     try:
-        result_file = download_and_decrypt(mpd_url, output_dir, key_file)
+        # Parse the user input
+        user_input = update.message.text.split()
+        if len(user_input) != 5:
+            update.message.reply_text("Please provide the MPD URL followed by four keys.")
+            return
+
+        mpd_url, key1, key2, key3, key4 = user_input
+        keys = {
+            'd45285545e4d525fb95c06b24a6f0bd3': key1,
+            '09c9f7c69d0b5077915804658fb26384': key2,
+            '48c36ec752b05716a8d7939aabbc9487': key3,
+            'feeb78d1c10959b4ac50e2db4accdc9c': key4,
+        }
+
+        output_dir = 'output_directory'
+
+        result_file = download_and_decrypt(mpd_url, output_dir, keys)
         update.message.reply_text("Download and decryption completed. Uploading the file...")
         with open(result_file, 'rb') as video:
             update.message.reply_video(video)
