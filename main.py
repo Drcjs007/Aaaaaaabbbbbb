@@ -25,27 +25,43 @@ async def download_file(url, dest, message):
         async with session.get(url) as response:
             total_size = int(response.headers.get('Content-Length', 0))
             downloaded_size = 0
-            last_update_time = time.time()
+            start_time = time.time()
             async with aiofiles.open(dest, 'wb') as f:
                 async for chunk in response.content.iter_chunked(8192):
                     if chunk:
                         downloaded_size += len(chunk)
                         await f.write(chunk)
                         current_time = time.time()
-                        if total_size and current_time - last_update_time >= 10:
+                        elapsed_time = current_time - start_time
+                        if elapsed_time >= 5:
+                            speed = downloaded_size / elapsed_time / 1024
                             progress = (downloaded_size / total_size) * 100
                             try:
-                                await message.edit_text(f"Downloading... {progress:.2f}%")
+                                await message.edit_text(
+                                    f"Downloading... {progress:.2f}% at {speed:.2f} KB/s"
+                                )
                             except FloodWait as e:
                                 await asyncio.sleep(e.value)
-                            last_update_time = current_time
+                            start_time = current_time
     return dest
 
-def decrypt_mp4(input_file, output_file, key):
+def decrypt_mp4(input_file, output_file, key, status_message):
     command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", f"1:{key}", input_file, output_file]
+    start_time = time.time()
     try:
-        result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return result.stdout.decode(), None
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        while process.poll() is None:
+            elapsed_time = time.time() - start_time
+            try:
+                status_message.edit_text(f"Decrypting... {elapsed_time:.2f} seconds elapsed")
+            except FloodWait as e:
+                time.sleep(e.value)
+            time.sleep(5)
+        stdout, stderr = process.communicate()
+        if process.returncode == 0:
+            return stdout.decode(), None
+        else:
+            return None, stderr.decode()
     except subprocess.CalledProcessError as e:
         return None, e.stderr.decode()
 
@@ -90,14 +106,19 @@ async def download_and_decrypt_video(client, message):
 
     # Decrypt the file
     await status_message.edit_text("Decrypting the file...")
-    stdout, stderr = decrypt_mp4(input_file, output_file, key)
+    stdout, stderr = decrypt_mp4(input_file, output_file, key, status_message)
     if stderr:
         await status_message.edit_text(f"Decryption failed: {stderr}")
     else:
         await status_message.edit_text("Decryption successful! Uploading the file...")
         try:
+            start_time = time.time()
             await client.send_document(chat_id=message.chat.id, document=output_file)
-            await status_message.edit_text("File uploaded successfully!")
+            elapsed_time = time.time() - start_time
+            speed = os.path.getsize(output_file) / elapsed_time / 1024
+            await status_message.edit_text(
+                f"File uploaded successfully at {speed:.2f} KB/s!"
+            )
         except FloodWait as e:
             await asyncio.sleep(e.seconds)
             await client.send_document(chat_id=message.chat.id, document=output_file)
