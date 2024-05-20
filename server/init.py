@@ -1,14 +1,7 @@
 from flask import Flask
+from .routes import register_routes
 
 def create_server():
     app = Flask(__name__)
-
-    @app.route("/")
-    def index():
-        return "Bot is running"
-
-    @app.route("/keep_alive")
-    def keep_alive():
-        return "Keeping the worker alive."
-
+    register_routes(app)
     return app
