@@ -20,7 +20,7 @@ PORT = int(os.getenv("PORT", 5000))  # Default to port 5000 if PORT is not set
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 server = Flask(__name__)
 
-BENTO4_BIN_DIR = "/app/bin"  # Path to Bento4 binaries
+BENTO4_BIN_DIR = os.path.expanduser("~/Bento4-SDK-1-6-0-641.x86_64-unknown-linux/bin")
 os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR
 
 @server.route("/")
@@ -53,7 +53,7 @@ async def download_file(url, dest, message):
     return dest
 
 async def decrypt_mp4(input_file, output_file, key, status_message):
-    command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", f"1:{key}", input_file, output_file]
+    command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", key, input_file, output_file]
     start_time = time.time()
     process = await asyncio.create_subprocess_exec(*command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     while process.returncode is None:
