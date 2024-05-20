@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import asyncio
 import time
 from urllib.parse import urlparse, urljoin
-from flask import Flask
+from flask import Flask, request
 import xml.etree.ElementTree as ET
 import re
 
@@ -31,6 +31,10 @@ os.environ["PATH"] += os.pathsep + BENTO4_BIN_DIR + os.pathsep + FFMPEG_BIN_DIR
 @server.route("/")
 def index():
     return "Bot is running"
+
+@server.route("/keep_alive")
+def keep_alive():
+    return "Keeping the worker alive."
 
 async def download_file(url, dest, message):
     async with aiohttp.ClientSession() as session:
@@ -198,8 +202,4 @@ async def download_and_decrypt_video(client, message):
     video_id = video_id_match.group(1) if video_id_match else None
 
     dest_folder = os.path.join(os.getcwd(), "segments")
-    if not os.path.exists(dest_folder):
-        os.makedirs(dest_folder)
-
-    # Inform the user about the start of the download
-   
+    if not os.path.exists(dest_folder
