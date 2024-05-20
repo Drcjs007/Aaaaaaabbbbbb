@@ -1,5 +1,7 @@
 import os
 import subprocess
+import threading
+import time
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from dotenv import load_dotenv
@@ -19,8 +21,11 @@ TOKEN = os.getenv("TOKEN")
 PORT = int(os.getenv("PORT", 8443))
 HEROKU_APP_NAME = os.getenv("HEROKU_APP_NAME")
 
+# FloodWait control
+FLOOD_WAIT_SECONDS = 60
+
 # Function to download and decrypt MPD links
-def download_and_decrypt(mpd_url, output_dir, keys):
+def download_and_decrypt(mpd_url, output_dir, file_name, keys, update: Update):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -34,7 +39,7 @@ def download_and_decrypt(mpd_url, output_dir, keys):
         '-M', 'format=mp4',
         '-sv', "id='2'",
         '-sa', 'best',
-        '--save-name', 'MENSTRUAL CYCLE-BASIC EXPLANATION'
+        '--save-name', file_name
     ]
 
     for kid, key in keys.items():
@@ -43,15 +48,28 @@ def download_and_decrypt(mpd_url, output_dir, keys):
     logger.info(f"Running download command: {' '.join(download_cmd)}")
 
     # Execute the download command
-    subprocess.run(download_cmd, check=True)
+    process = subprocess.Popen(download_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    while True:
+        output = process.stdout.readline()
+        if output:
+            logger.info(output.strip())
+            update.message.reply_text(output.strip())
+        if process.poll() is not None:
+            break
+
+    process.stdout.close()
+    process.wait()
+
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, download_cmd)
 
     # Return the path to the downloaded file
-    return os.path.join(output_dir, 'MENSTRUAL CYCLE-BASIC EXPLANATION.mp4')
+    return os.path.join(output_dir, file_name)
 
-# Bot command handlers
 def start(update: Update, context: CallbackContext):
     logger.info("Received /start command")
-    update.message.reply_text('Hello! Send me an MPD URL to download and decrypt with keys in the format: mpd_url, key1, key2, key3, key4')
+    update.message.reply_text('Hello! Send me an MPD URL to download and decrypt with keys in the format: mpd_url file_name key1 key2 key3 key4')
 
 def help_command(update: Update, context: CallbackContext):
     logger.info("Received /help command")
@@ -60,9 +78,9 @@ def help_command(update: Update, context: CallbackContext):
         "Commands:\n"
         "/start - Start the bot\n"
         "/help - Show this help message\n\n"
-        "Send an MPD URL followed by four keys to download and decrypt the video.\n"
+        "Send an MPD URL followed by a file name and four keys to download and decrypt the video.\n"
         "Example:\n"
-        "mpd_url key1 key2 key3 key4"
+        "mpd_url file_name key1 key2 key3 key4"
     )
     update.message.reply_text(help_text)
 
@@ -71,29 +89,32 @@ def handle_message(update: Update, context: CallbackContext):
     try:
         # Parse the user input
         user_input = update.message.text.split()
-        if len(user_input) != 5:
-            update.message.reply_text("Please provide the MPD URL followed by four keys.")
+        if len(user_input) < 6:
+            update.message.reply_text("Please provide the MPD URL, file name, and at least four keys.")
             return
 
-        mpd_url, key1, key2, key3, key4 = user_input
-        keys = {
-            'd45285545e4d525fb95c06b24a6f0bd3': key1,
-            '09c9f7c69d0b5077915804658fb26384': key2,
-            '48c36ec752b05716a8d7939aabbc9487': key3,
-            'feeb78d1c10959b4ac50e2db4accdc9c': key4,
-        }
+        mpd_url = user_input[0]
+        file_name = user_input[1]
+        keys = {user_input[i]: user_input[i + 1] for i in range(2, len(user_input), 2)}
 
         output_dir = 'output_directory'
 
-        result_file = download_and_decrypt(mpd_url, output_dir, keys)
-        update.message.reply_text("Download and decryption completed. Uploading the file...")
-        with open(result_file, 'rb') as video:
-            update.message.reply_video(video)
+        def download_thread():
+            try:
+                result_file = download_and_decrypt(mpd_url, output_dir, file_name, keys, update)
+                update.message.reply_text("Download and decryption completed. Uploading the file...")
+                with open(result_file, 'rb') as video:
+                    update.message.reply_video(video)
+            except Exception as e:
+                logger.error(f"Error occurred: {e}")
+                update.message.reply_text(f"An error occurred: {e}")
+
+        threading.Thread(target=download_thread).start()
+
     except Exception as e:
         logger.error(f"Error occurred: {e}")
         update.message.reply_text(f"An error occurred: {e}")
 
-# Main function to set up the bot
 def main():
     logger.info("Starting bot")
     application = Application.builder().token(TOKEN).build()
