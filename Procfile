@@ -1,1 +1,1 @@
-worker: python main.py
+worker: gunicorn -w 4 -b 0.0.0.0:$PORT server:app
