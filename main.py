@@ -1,11 +1,10 @@
 import os
 import subprocess
 import time
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from dotenv import load_dotenv
 import logging
-from telegram.error import TimedOut, NetworkError, RetryAfter
 
 # Enable logging
 logging.basicConfig(
@@ -20,8 +19,6 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 PORT = int(os.getenv("PORT", 8443))
 HEROKU_APP_NAME = os.getenv("HEROKU_APP_NAME")
-API_ID = os.getenv("API_ID")
-API_HASH = os.getenv("API_HASH")
 
 # Function to download and decrypt MPD links
 def download_and_decrypt(mpd_url, output_dir, file_name, keys):
