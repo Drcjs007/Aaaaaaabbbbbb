@@ -1,6 +1,5 @@
-from pyrogram import filters
-from . import app
-from .download import download_and_decrypt_video
+from pyrogram import Client, filters
+from bot import app
 
 @app.on_message(filters.command("start"))
 def start_command(client, message):
@@ -17,7 +16,3 @@ def help_command(client, message):
         "/download https://example.com/stream.mpd --key key1:key2 --key key3:key4 -M format=mp4 -sv id='2' -sa best --save-name 'My Video'"
     )
     message.reply_text(help_text)
-
-@app.on_message(filters.command("download"))
-async def download_command(client, message):
-    await download_and_decrypt_video(client, message)
