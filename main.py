@@ -11,6 +11,7 @@ from urllib.parse import urlparse, urljoin
 from flask import Flask, request
 import xml.etree.ElementTree as ET
 import re
+import signal
 
 # Load environment variables
 load_dotenv()
@@ -210,6 +211,15 @@ async def download_and_decrypt_video(client, message):
 
     # Proceed with the download and decryption process here
 
-if __name__ == "__main__":
-    app.run()
+async def main():
+    await app.start()
     server.run(host="0.0.0.0", port=PORT)
+
+def shutdown(signal, frame):
+    print("Received shutdown signal")
+    asyncio.run(app.stop())
+    os._exit(0)
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, shutdown)
+    asyncio.run(main())
