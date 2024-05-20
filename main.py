@@ -1,7 +1,7 @@
 import os
 import subprocess
 import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -73,7 +73,7 @@ def main():
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     updater.start_webhook(listen="0.0.0.0", port=PORT, url_path=TOKEN)
     updater.bot.setWebhook(f"https://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/{TOKEN}")
@@ -82,4 +82,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
