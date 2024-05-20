@@ -56,7 +56,7 @@ async def decrypt_mp4(input_file, output_file, key, status_message):
     command = [os.path.join(BENTO4_BIN_DIR, "mp4decrypt"), "--key", f"1:{key}", input_file, output_file]
     start_time = time.time()
     process = await asyncio.create_subprocess_exec(*command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    while True:
+    while process.returncode is None:
         elapsed_time = time.time() - start_time
         try:
             await status_message.edit_text(f"Decrypting... {elapsed_time:.2f} seconds elapsed")
@@ -66,8 +66,7 @@ async def decrypt_mp4(input_file, output_file, key, status_message):
             if "MESSAGE_NOT_MODIFIED" not in str(e):
                 raise
         await asyncio.sleep(5)
-        if process.returncode is not None:
-            break
+        await process.wait()
     stdout, stderr = await process.communicate()
     if process.returncode == 0:
         return stdout.decode(), None
@@ -125,9 +124,7 @@ async def download_and_decrypt_video(client, message):
             await client.send_document(chat_id=message.chat.id, document=output_file)
             elapsed_time = time.time() - start_time
             speed = os.path.getsize(output_file) / elapsed_time / 1024
-            await status_message.edit_text(
-                f"File uploaded successfully at {speed:.2f} KB/s!"
-            )
+            await status_message.edit_text(f"File uploaded successfully at {speed:.2f} KB/s!")
         except FloodWait as e:
             await asyncio.sleep(e.value)
             await client.send_document(chat_id=message.chat.id, document=output_file)
